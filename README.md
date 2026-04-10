@@ -1,11 +1,11 @@
-<<<<<<< HEAD
-# BiblioGest 📚
-**Sistema de Información para el Control de Préstamos y Devoluciones**
+# BiblioGest
 
-> Materia: Administración de Sistemas de Información  
-> Integrantes: Angelin Escalante · Rick Rios
+Sistema de información para el control de préstamos y devoluciones en biblioteca.
 
----
+Automatizar el registro de usuarios, inventario y préstamos para mejorar la eficiencia y trazabilidad.
+
+Materia: Administración de Sistemas de Información  
+Integrantes: Angelin Escalante · Rick Rios
 
 ## Stack tecnológico
 
@@ -13,7 +13,6 @@
 |------|-----------|
 | Frontend | React 18 + Vite |
 | Estilos | TailwindCSS + CSS Variables |
-| Tipografía | DM Serif Display + DM Sans |
 | Base de datos | Supabase (PostgreSQL) |
 | Auth | Supabase Auth |
 | Estado servidor | TanStack Query v5 |
@@ -21,132 +20,111 @@
 | Routing | React Router v6 |
 | Gráficas | Recharts |
 
----
+## Módulos del sistema
 
-## Estructura del proyecto
+### Autenticación
+- Inicio de sesión con Supabase Auth.
+- Protección de rutas para usuarios autenticados.
+- Cambio obligatorio de contraseña temporal en primer ingreso.
 
+### Dashboard
+- KPIs de biblioteca en tiempo real.
+- Resumen de préstamos activos y vencidos.
+- Vista de actividad reciente.
+
+### Libros
+- CRUD de inventario.
+- Búsqueda por título, autor o ISBN.
+- Filtros por categoría y disponibilidad.
+
+### Préstamos
+- Registro de nuevos préstamos.
+- Devolución de libros.
+- Estados: activo, devuelto, vencido y renovado.
+- Filtros por estado, usuario y categoría.
+
+### Notificaciones de retraso
+- Avisos enviados por lectores.
+- Revisión por staff/admin con aprobación o rechazo.
+
+### Usuarios
+- Gestión de lectores, bibliotecarios y administradores.
+- Historial de préstamos por usuario.
+- Alta de cuenta Auth para roles con acceso al sistema.
+
+### Categorías
+- CRUD de categorías.
+- Validación para evitar eliminar categorías con libros asociados.
+
+### Reportes
+- Préstamos por mes.
+- Disponibilidad del inventario.
+- Ranking de libros más prestados.
+
+### Portal del lector
+- Consulta de préstamos activos.
+- Envío de notificaciones de retraso con nueva fecha propuesta.
+- Consulta del estado de notificaciones enviadas.
+
+## Rutas principales
+
+- /login
+- /dashboard
+- /books
+- /books/new
+- /books/:id
+- /books/:id/edit
+- /loans
+- /loans/new
+- /notifications
+- /users
+- /users/new
+- /users/:id
+- /users/:id/edit
+- /categories
+- /reports
+- /my-loans
+- /change-password
+
+## Configuración local
+
+### 1. Instalar dependencias
+
+```bash
+npm install
 ```
-src/
-├── components/
-│   ├── layout/          # Layout, Sidebar, Header, ProtectedRoute
-│   └── ui/              # Modal, SearchBar, Misc (Spinner, Badge, Pagination...)
-├── pages/
-│   ├── auth/            # LoginPage
-│   ├── books/           # BooksPage, BookFormPage, BookDetailPage
-│   ├── loans/           # LoansPage, NewLoanPage
-│   ├── users/           # UsersPage, UserFormPage, UserDetailPage
-│   └── reports/         # ReportsPage
-├── services/            # Supabase queries por módulo
-├── hooks/               # useSearch, useDebounce
-├── store/               # Zustand (auth + UI/toasts)
-├── utils/               # dates.js, constants.js
-└── router/              # React Router config
-supabase/
-├── migrations/
-│   ├── 001_initial_schema.sql   # Tablas + triggers automáticos
-│   ├── 002_rls_policies.sql     # Row Level Security
-│   └── 003_views_functions.sql  # Vistas y función de dashboard
-└── seed.sql                     # Datos de prueba
-```
-
----
-
-## Configuración inicial
-
-### 1. Supabase
-
-1. Crea un proyecto en [supabase.com](https://supabase.com)
-2. Ve a **SQL Editor** y ejecuta en orden:
-   - `supabase/migrations/001_initial_schema.sql`
-   - `supabase/migrations/002_rls_policies.sql`
-   - `supabase/migrations/003_views_functions.sql`
-   - `supabase/seed.sql` *(opcional — datos de prueba)*
-3. Ve a **Authentication → Users** y crea un usuario de prueba (staff)
 
 ### 2. Variables de entorno
 
-```bash
-cp .env.example .env.local
+Crea el archivo `.env.local` con este formato:
+
+```env
+VITE_SUPABASE_URL=https://tu-proyecto.supabase.co
+VITE_SUPABASE_ANON_KEY=tu_anon_key_aqui
+VITE_SUPABASE_SERVICE_ROLE_KEY=tu_service_role_key_aqui
 ```
 
-Edita `.env.local`:
-```
-VITE_SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-```
+Notas:
+- `VITE_SUPABASE_SERVICE_ROLE_KEY` es opcional y solo aplica para flujos administrativos.
 
-Las credenciales están en tu proyecto Supabase → **Settings → API**.
-
-### 3. Instalar y correr
+### 3. Ejecutar en desarrollo
 
 ```bash
 npm install
 npm run dev
 ```
 
-Abre [http://localhost:5173](http://localhost:5173)
+## Scripts disponibles
 
----
+- `npm run dev`: entorno de desarrollo.
+- `npm run build`: build de producción.
+- `npm run preview`: vista previa de build.
 
-## Módulos del sistema
+## Base de datos y SQL local
 
-### Dashboard
-- KPIs en tiempo real: libros disponibles, préstamos activos, vencidos, usuarios, actividad mensual
-- Panel de alertas de préstamos vencidos
-- Lista de préstamos activos con días restantes
-- Accesos rápidos a acciones frecuentes
+Los scripts SQL de inicialización/migración se manejan de forma local y no se publican en este repositorio.
 
-### 📚 Libros (Inventario)
-- Lista completa con búsqueda full-text por título, autor o ISBN
-- Filtros por categoría y disponibilidad
-- Ficha detallada con historial de préstamos del libro
-- Stock automático (triggers en BD)
-- CRUD completo: crear, editar, eliminar
+## Seguridad
 
-### 📋 Préstamos
-- Lista con filtros por estado (activo, devuelto, vencido, renovado)
-- Búsqueda por usuario o libro
-- Indicadores visuales de días restantes / retraso
-- Registro de devolución con confirmación modal
-- Nuevo préstamo: búsqueda en vivo de usuario + libro disponible
-
-### 👤 Usuarios
-- Registro de lectores con documento, contacto y notas
-- Roles: lector, bibliotecario, administrador
-- Perfil con historial completo de préstamos
-- Estadísticas por usuario (activos, devueltos, vencidos)
-
-### 📊 Reportes
-- Gráfica de barras: préstamos por mes del año actual
-- Gráfica de torta: disponibilidad del inventario
-- Ranking de libros más prestados con barra de popularidad
-
----
-
-## Base de datos
-
-### Tablas principales
-| Tabla | Descripción |
-|-------|-------------|
-| `users` | Lectores registrados (no usuarios de auth) |
-| `books` | Inventario con stock por ejemplar |
-| `categories` | Clasificación de libros |
-| `loans` | Préstamos con estado y fechas |
-| `loan_history` | Trazabilidad de eventos por préstamo |
-
-### Automatizaciones (triggers)
-- **Stock**: al crear un préstamo, `available_copies--`. Al devolver, `available_copies++`
-- **Historial**: cada cambio de estado genera un registro en `loan_history`
-- **Timestamps**: `updated_at` se actualiza automáticamente
-
-### Vistas
-- `active_loans_view`: préstamos activos con datos completos de usuario y libro
-- `overdue_loans_view`: préstamos vencidos con días de retraso
-- `user_loan_history_view`: historial completo por usuario
-
-### Función RPC
-- `get_dashboard_stats()`: retorna JSON con todos los KPIs del dashboard en una sola query
-=======
-# bibliogest
-Automatizar el registro de usuarios, inventario y préstamos para mejorar la eficiencia y trazabilidad.
->>>>>>> 5c92b2b65cb6387f1f92a588e1cacee41f05b517
+- Mantener `.env` y `.env.local` fuera de control de versiones.
+- Usar placeholders en documentación y ejemplos.
