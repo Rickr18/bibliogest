@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # BiblioGest 📚
 **Sistema de Información para el Control de Préstamos y Devoluciones**
 
@@ -145,3 +146,7 @@ Abre [http://localhost:5173](http://localhost:5173)
 
 ### Función RPC
 - `get_dashboard_stats()`: retorna JSON con todos los KPIs del dashboard en una sola query
+=======
+# bibliogest
+Automatizar el registro de usuarios, inventario y préstamos para mejorar la eficiencia y trazabilidad.
+>>>>>>> 5c92b2b65cb6387f1f92a588e1cacee41f05b517
