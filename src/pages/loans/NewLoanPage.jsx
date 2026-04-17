@@ -9,7 +9,7 @@ import { useAuthStore, useUIStore } from '../../store/index.js'
 import { useSearch } from '../../hooks/useSearch.js'
 import { useDebounce } from '../../hooks/useDebounce.js'
 import { SearchBar } from '../../components/ui/SearchBar.jsx'
-import { Spinner } from '../../components/ui/Misc.jsx'
+import { Spinner, ReputationBadge } from '../../components/ui/Misc.jsx'
 import { getDueDateFromToday, formatDate } from '../../utils/dates.js'
 import { DEFAULT_LOAN_DAYS } from '../../utils/constants.js'
 
@@ -24,6 +24,12 @@ export function NewLoanPage() {
   const [selectedBooks, setSelectedBooks] = useState([])
   const [dueDate, setDueDate]             = useState(getDueDateFromToday(DEFAULT_LOAN_DAYS))
   const [notes, setNotes]                 = useState('')
+
+  const { data: selectedUserReputation } = useQuery({
+    queryKey: ['user-reputation', selectedUser?.id],
+    queryFn: () => usersService.getReputation(selectedUser.id),
+    enabled: Boolean(selectedUser?.id),
+  })
 
   // Panel derecho: estado de búsqueda y categoría
   const [panelSearch, setPanelSearch]       = useState('')
@@ -171,11 +177,14 @@ export function NewLoanPage() {
                   background: 'var(--color-blue-soft)', border: '1px solid var(--color-blue)',
                   borderRadius: 'var(--radius)', padding: '14px 16px',
                 }}>
-                  <div>
+                  <div style={{ flex: 1 }}>
                     <p style={{ fontWeight: '600', color: 'var(--color-ink)' }}>{selectedUser.full_name}</p>
-                    <p style={{ fontSize: '12px', color: 'var(--color-ink-3)' }}>
+                    <p style={{ fontSize: '12px', color: 'var(--color-ink-3)', marginBottom: '8px' }}>
                       Doc: {selectedUser.document_id} · {selectedUser.email ?? selectedUser.phone}
                     </p>
+                    {selectedUserReputation && (
+                      <ReputationBadge reputation={selectedUserReputation} showDetail />
+                    )}
                   </div>
                   <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSelectedUser(null)}>
                     Cambiar
@@ -305,12 +314,12 @@ export function NewLoanPage() {
               <div className="field-row">
                 <div className="field">
                   <label className="label">Fecha de préstamo</label>
-                  <input className="input" type="date" value={new Date().toISOString().split('T')[0]} disabled style={{ opacity: 0.6 }} />
+                  <input className="input" type="date" value={getDueDateFromToday(0)} disabled style={{ opacity: 0.6 }} />
                 </div>
                 <div className="field">
                   <label className="label">Fecha de vencimiento *</label>
                   <input className="input" type="date" required value={dueDate}
-                    min={new Date().toISOString().split('T')[0]}
+                    min={getDueDateFromToday(0)}
                     onChange={e => setDueDate(e.target.value)} />
                 </div>
               </div>

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { loansService } from '../../services/loansService.js'
@@ -48,6 +48,12 @@ export function LoansPage() {
     queryFn: () => usersService.getByAuthId(authUser.id),
     enabled: Boolean(authUser?.id),
   })
+
+  useEffect(() => {
+    loansService.autoMarkOverdue().then(() => {
+      qc.invalidateQueries({ queryKey: ['loans'] })
+    })
+  }, [])
 
   const { data, isLoading } = useQuery({
     queryKey: ['loans', debouncedSearch, filters, page],
@@ -175,7 +181,7 @@ export function LoansPage() {
                         )}
                       </td>
                       <td style={{ fontSize: '13px' }}>{formatDate(loan.due_date)}</td>
-                      <td><LoanStatusBadge status={loan.status} /></td>
+                      <td><LoanStatusBadge status={loan.status} dueDate={loan.due_date} /></td>
                       <td>
                         {isActive && days < 0 && (
                           <div>

@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient.js'
+import { getTodayBogota } from '../utils/dates.js'
 
 export const loansService = {
   async getAll({ status = null, userId = null, overdue = false, categoryId = null, page = 1, limit = 20 } = {}) {
@@ -14,7 +15,7 @@ export const loansService = {
 
     if (status) query = query.eq('status', status)
     if (userId) query = query.eq('user_id', userId)
-    if (overdue) query = query.lt('due_date', new Date().toISOString().split('T')[0]).in('status', ['active', 'renewed'])
+    if (overdue) { const today = await getTodayBogota(); query = query.lt('due_date', today).in('status', ['active', 'renewed']) }
     if (categoryId) query = query.eq('books.category_id', categoryId)
 
     const from = (page - 1) * limit
@@ -48,7 +49,7 @@ export const loansService = {
       .from('loans')
       .update({
         status: 'returned',
-        return_date: new Date().toISOString().split('T')[0],
+        return_date: await getTodayBogota(),
         returned_by: returnedBy,
       })
       .eq('id', loanId).select().single()
@@ -73,7 +74,7 @@ export const loansService = {
   async updateDueDate(loanId, newDueDate) {
     const { data, error } = await supabase
       .from('loans')
-      .update({ due_date: newDueDate })
+      .update({ due_date: newDueDate, status: 'renewed' })
       .eq('id', loanId).select().single()
     if (error) throw error
     return data
@@ -89,5 +90,10 @@ export const loansService = {
       .order('due_date')
     if (error) throw error
     return data
+  },
+
+  async autoMarkOverdue() {
+    const { error } = await supabase.rpc('mark_overdue_loans')
+    if (error) console.warn('autoMarkOverdue:', error.message)
   },
 }

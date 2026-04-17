@@ -233,6 +233,12 @@ export function DashboardPage() {
         <Link to="/users/new" className="btn btn-secondary" style={{ background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.85)', border: 'none' }}>
           + Registrar usuario
         </Link>
+        <Link to="/categories/new" className="btn btn-secondary" style={{ background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.85)', border: 'none' }}>
+          + Nueva categoría
+        </Link>
+        <Link to="/my-loans" className="btn btn-secondary" style={{ background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.85)', border: 'none' }}>
+          Mis préstamos
+        </Link>
       </div>
     </div>
   )

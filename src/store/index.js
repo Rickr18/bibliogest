@@ -5,11 +5,13 @@ import { persist } from 'zustand/middleware'
 export const useAuthStore = create(
   persist(
     (set) => ({
-      user: null,
-      session: null,
+      user: null,       // auth.User de Supabase
+      session: null,    // auth.Session de Supabase
+      profile: null,    // fila de la tabla `users` (id, role, full_name, active…)
       setUser: (user) => set({ user }),
       setSession: (session) => set({ session }),
-      logout: () => set({ user: null, session: null }),
+      setProfile: (profile) => set({ profile }),
+      logout: () => set({ user: null, session: null, profile: null }),
     }),
     { name: 'bibliogestion-auth' }
   )

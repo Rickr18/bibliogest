@@ -4,8 +4,7 @@ import { usersService } from '../../services/usersService.js'
 import { useSearch } from '../../hooks/useSearch.js'
 import { SearchBar, FilterSelect } from '../../components/ui/SearchBar.jsx'
 import { Pagination, Spinner, EmptyState } from '../../components/ui/Misc.jsx'
-import { formatDate } from '../../utils/dates.js'
-import { USER_ROLES } from '../../utils/constants.js'
+import { USER_ROLES, PRINCIPAL_ADMIN_ID } from '../../utils/constants.js'
 
 export function UsersPage() {
   const { search, setSearch, debouncedSearch, filters, updateFilter, page, setPage } = useSearch({
@@ -89,7 +88,6 @@ export function UsersPage() {
                   <th>Documento</th>
                   <th>Contacto</th>
                   <th>Rol</th>
-                  <th>Registrado</th>
                   <th></th>
                 </tr>
               </thead>
@@ -121,12 +119,13 @@ export function UsersPage() {
                       <div style={{ color: 'var(--color-ink-3)', fontSize: '12px' }}>{user.phone ?? ''}</div>
                     </td>
                     <td>
-                      <span className={`badge ${user.role === 'admin' ? 'badge-red' : user.role === 'staff' ? 'badge-amber' : 'badge-gray'}`}>
+                      <span className={`badge ${
+                        user.role === 'admin' && user.id !== PRINCIPAL_ADMIN_ID ? 'badge-green' :
+                        user.role === 'admin' ? 'badge-red' :
+                        user.role === 'staff' ? 'badge-amber' : 'badge-gray'
+                      }`}>
                         {USER_ROLES[user.role] ?? user.role}
                       </span>
-                    </td>
-                    <td style={{ fontSize: '13px', color: 'var(--color-ink-3)' }}>
-                      {formatDate(user.created_at)}
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>

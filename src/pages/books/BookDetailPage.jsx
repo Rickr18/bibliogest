@@ -233,7 +233,7 @@ export function BookDetailPage() {
                       )}
                     </td>
                     {/* Estado */}
-                    <td><LoanStatusBadge status={loan.status} /></td>
+                    <td><LoanStatusBadge status={loan.status} dueDate={loan.due_date} /></td>
                   </tr>
                 ))}
               </tbody>

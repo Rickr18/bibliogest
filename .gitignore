@@ -6,3 +6,4 @@ dist
 supabase
 .agents
 skills-lock.json
+.claude

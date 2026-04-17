@@ -3,50 +3,43 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { loansService } from '../../services/loansService.js'
 import { notificationsService } from '../../services/usersService.js'
 import { useAuthStore, useUIStore } from '../../store/index.js'
-import { formatDate, getDaysLeft } from '../../utils/dates.js'
+import { formatDate, getDaysLeft, getDueDateFromToday } from '../../utils/dates.js'
 import { LoanStatusBadge, Spinner, EmptyState } from '../../components/ui/Misc.jsx'
 import { Modal } from '../../components/ui/Modal.jsx'
+import { PRINCIPAL_ADMIN_ID } from '../../utils/constants.js'
 
 const FINE_PER_DAY = 500
 
 export function ReaderPortalPage() {
-  const user = useAuthStore(s => s.user)
+  const currentProfile = useAuthStore(s => s.profile)
   const addToast = useUIStore(s => s.addToast)
   const [notifyModal, setNotifyModal] = useState(null)
   const [newDate, setNewDate] = useState('')
   const [message, setMessage] = useState('')
   const qc = useQueryClient()
 
-  // El user.id aquí es el auth_id; necesitamos el users.id
-  const { data: readerProfile } = useQuery({
-    queryKey: ['reader-profile', user?.id],
-    queryFn: async () => {
-      const { data, error } = await import('../../services/supabaseClient.js').then(m =>
-        m.supabase.from('users').select('*').eq('auth_id', user.id).single()
-      )
-      if (error) throw error
-      return data
-    },
-    enabled: Boolean(user?.id),
-  })
+  const isReader = currentProfile?.role === 'reader'
+  const isStaff  = currentProfile?.role === 'staff'
+  const isAdminNormal = currentProfile?.role === 'admin' && currentProfile?.id !== PRINCIPAL_ADMIN_ID
+  const isPrincipalAdmin = currentProfile?.id === PRINCIPAL_ADMIN_ID
 
   const { data: activeLoans = [], isLoading } = useQuery({
-    queryKey: ['reader-loans', readerProfile?.id],
-    queryFn: () => loansService.getByUser(readerProfile.id),
-    enabled: Boolean(readerProfile?.id),
+    queryKey: ['my-loans', currentProfile?.id],
+    queryFn: () => loansService.getByUser(currentProfile.id),
+    enabled: Boolean(currentProfile?.id),
   })
 
   const { data: myNotifications = [] } = useQuery({
-    queryKey: ['reader-notifications', readerProfile?.id],
-    queryFn: () => notificationsService.getByUser(readerProfile.id),
-    enabled: Boolean(readerProfile?.id),
+    queryKey: ['my-notifications', currentProfile?.id],
+    queryFn: () => notificationsService.getByUser(currentProfile.id),
+    enabled: Boolean(currentProfile?.id),
   })
 
   const notifyMutation = useMutation({
     mutationFn: data => notificationsService.create(data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['reader-notifications'] })
-      addToast('Notificación enviada a la biblioteca', 'success')
+      qc.invalidateQueries({ queryKey: ['my-notifications'] })
+      addToast('Notificación enviada al sistema', 'success')
       setNotifyModal(null)
       setNewDate('')
       setMessage('')
@@ -60,7 +53,7 @@ export function ReaderPortalPage() {
     const fine = days < 0 ? Math.abs(getDaysLeft(newDate || notifyModal.due_date)) * FINE_PER_DAY : 0
     notifyMutation.mutate({
       loan_id: notifyModal.id,
-      user_id: readerProfile.id,
+      user_id: currentProfile.id,
       new_return_date: newDate || null,
       message,
       fine_amount: fine,
@@ -69,13 +62,47 @@ export function ReaderPortalPage() {
 
   if (isLoading) return <Spinner center />
 
+  // Aviso de jerarquía de aprobación para staff/admin
+  const approvalNotice = (() => {
+    if (isReader) return null
+    if (isPrincipalAdmin) return null   // el admin principal no tiene restricción de auto-aprobación
+    if (isAdminNormal) return {
+      text: 'Como administrador, la extensión de tus préstamos debe ser aprobada por el administrador principal. No puedes aprobarla tú mismo.',
+      color: 'var(--color-accent)',
+      bg: 'var(--color-accent-soft)',
+    }
+    if (isStaff) return {
+      text: 'Como bibliotecario, la extensión de tus préstamos debe ser aprobada por un administrador. No puedes aprobarla tú mismo.',
+      color: 'var(--color-amber)',
+      bg: 'var(--color-amber-soft)',
+    }
+    return null
+  })()
+
+  const greetingLabel = isReader
+    ? 'aquí puedes ver tus libros activos y notificar retrasos.'
+    : 'aquí puedes ver los libros que tienes prestados.'
+
   return (
     <div style={{ maxWidth: '760px' }}>
       {/* Saludo */}
       <div style={{ marginBottom: '28px' }}>
         <h1 className="page-title">Mis préstamos</h1>
-        <p className="page-subtitle">Hola, {readerProfile?.full_name ?? user?.email} — aquí puedes ver tus libros activos y notificar retrasos.</p>
+        <p className="page-subtitle">Hola, {currentProfile?.full_name ?? '—'} — {greetingLabel}</p>
       </div>
+
+      {/* Aviso jerarquía aprobación (solo staff/admin normal) */}
+      {approvalNotice && (
+        <div style={{
+          background: approvalNotice.bg,
+          border: `1px solid ${approvalNotice.color}`,
+          borderRadius: 'var(--radius)', padding: '12px 16px',
+          fontSize: '13px', color: approvalNotice.color,
+          marginBottom: '20px', lineHeight: '1.5',
+        }}>
+          ℹ️ {approvalNotice.text}
+        </div>
+      )}
 
       {/* Préstamos activos */}
       <div className="card" style={{ overflow: 'hidden', marginBottom: '24px' }}>
@@ -143,7 +170,10 @@ export function ReaderPortalPage() {
           </div>
           <div>
             {myNotifications.map(n => (
-              <div key={n.id} style={{ padding: '14px 20px', borderBottom: '1px solid var(--color-paper-2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+              <div key={n.id} style={{
+                padding: '14px 20px', borderBottom: '1px solid var(--color-paper-2)',
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px',
+              }}>
                 <div>
                   <p style={{ fontSize: '13px', color: 'var(--color-ink)', fontWeight: '500' }}>
                     {n.loans?.books?.title ?? 'Libro'}
@@ -177,32 +207,38 @@ export function ReaderPortalPage() {
               </p>
             </div>
 
+            {/* Aviso extra para staff/admin en el modal */}
+            {approvalNotice && (
+              <div style={{
+                background: approvalNotice.bg, borderRadius: 'var(--radius)',
+                padding: '10px 14px', fontSize: '12px', color: approvalNotice.color,
+                marginBottom: '16px', lineHeight: '1.4',
+              }}>
+                ℹ️ Esta solicitud quedará pendiente de aprobación por{' '}
+                {isAdminNormal ? 'el administrador principal' : 'un administrador'}.
+              </div>
+            )}
+
             <div className="field">
               <label className="label">Nueva fecha estimada de devolución</label>
-              <input
-                className="input"
-                type="date"
-                value={newDate}
-                min={new Date().toISOString().split('T')[0]}
-                onChange={e => setNewDate(e.target.value)}
-                required
-              />
+              <input className="input" type="date" value={newDate}
+                min={getDueDateFromToday(0)}
+                onChange={e => setNewDate(e.target.value)} required />
             </div>
 
             <div className="field">
-              <label className="label">Motivo o mensaje para la biblioteca *</label>
-              <textarea
-                className="input"
-                required
-                value={message}
+              <label className="label">Motivo o mensaje *</label>
+              <textarea className="input" required value={message}
                 onChange={e => setMessage(e.target.value)}
                 placeholder="Explica el motivo del retraso..."
-                style={{ minHeight: '90px' }}
-              />
+                style={{ minHeight: '90px' }} />
             </div>
 
             {newDate && getDaysLeft(notifyModal.due_date) < 0 && (
-              <div style={{ background: 'var(--color-amber-soft)', borderRadius: 'var(--radius)', padding: '12px', marginBottom: '16px', fontSize: '13px', color: 'var(--color-amber)' }}>
+              <div style={{
+                background: 'var(--color-amber-soft)', borderRadius: 'var(--radius)',
+                padding: '12px', marginBottom: '16px', fontSize: '13px', color: 'var(--color-amber)',
+              }}>
                 ⚠️ Se generará una multa estimada de <strong>
                   ${(Math.abs(getDaysLeft(notifyModal.due_date)) * FINE_PER_DAY).toLocaleString('es-CO')} COP
                 </strong> por los días de retraso actuales. La biblioteca confirmará el monto exacto.

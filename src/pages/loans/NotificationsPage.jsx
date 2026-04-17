@@ -1,23 +1,29 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { notificationsService } from '../../services/usersService.js'
-import { usersService } from '../../services/usersService.js'
 import { loansService } from '../../services/loansService.js'
 import { useAuthStore, useUIStore } from '../../store/index.js'
 import { formatDate } from '../../utils/dates.js'
-import { USER_ROLES } from '../../utils/constants.js'
+import { USER_ROLES, PRINCIPAL_ADMIN_ID } from '../../utils/constants.js'
 import { Spinner, EmptyState } from '../../components/ui/Misc.jsx'
 
 export function NotificationsPage() {
   const qc = useQueryClient()
   const addToast = useUIStore(s => s.addToast)
-  const user = useAuthStore(s => s.user)
+  const currentProfile = useAuthStore(s => s.profile)
 
-  // Perfil del revisor actual (necesitamos su public.users.id para reviewed_by)
-  const { data: reviewerProfile } = useQuery({
-    queryKey: ['reviewer-profile', user?.id],
-    queryFn: () => usersService.getByAuthId(user.id),
-    enabled: Boolean(user?.id),
-  })
+  const currentUserRole = currentProfile?.role ?? 'staff'
+  const isActorPrincipalAdmin = currentProfile?.id === PRINCIPAL_ADMIN_ID
+
+  // Determina si el actor puede aprobar/rechazar la notificación según el rol del prestatario
+  // - Prestatario lector   → cualquier staff/admin puede revisar
+  // - Prestatario staff    → solo admins pueden revisar
+  // - Prestatario admin    → solo el admin principal puede revisar
+  function canReview(borrowerRole) {
+    if (!borrowerRole || borrowerRole === 'reader') return true
+    if (borrowerRole === 'staff') return currentUserRole === 'admin'
+    if (borrowerRole === 'admin') return isActorPrincipalAdmin
+    return false
+  }
 
   const { data: notifications = [], isLoading } = useQuery({
     queryKey: ['notifications'],
@@ -26,7 +32,7 @@ export function NotificationsPage() {
 
   const reviewMutation = useMutation({
     mutationFn: async ({ id, status, loanId, newReturnDate }) => {
-      await notificationsService.updateStatus(id, status, reviewerProfile?.id)
+      await notificationsService.updateStatus(id, status, currentProfile?.id)
       if (status === 'approved' && loanId && newReturnDate) {
         await loansService.updateDueDate(loanId, newReturnDate)
       }
@@ -70,7 +76,7 @@ export function NotificationsPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Notificaciones de retraso</h1>
-          <p className="page-subtitle">Avisos enviados por lectores sobre devoluciones pendientes</p>
+          <p className="page-subtitle">Avisos enviados por usuarios sobre devoluciones pendientes</p>
         </div>
         {pending.length > 0 && (
           <span className="badge badge-red" style={{ fontSize: '13px', padding: '6px 14px' }}>
@@ -124,21 +130,37 @@ export function NotificationsPage() {
                         Enviado el {formatDate(n.created_at)}
                       </p>
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
-                      <button
-                        className="btn btn-primary btn-sm"
-                        onClick={() => reviewMutation.mutate({ id: n.id, status: 'approved', loanId: n.loan_id, newReturnDate: n.new_return_date })}
-                        disabled={reviewMutation.isPending}
-                      >
-                        ✓ Aprobar
-                      </button>
-                      <button
-                        className="btn btn-danger btn-sm"
-                        onClick={() => reviewMutation.mutate({ id: n.id, status: 'rejected' })}
-                        disabled={reviewMutation.isPending}
-                      >
-                        ✕ Rechazar
-                      </button>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0, alignItems: 'flex-end' }}>
+                      {canReview(n.borrower_role) ? (
+                        <>
+                          <button
+                            className="btn btn-primary btn-sm"
+                            onClick={() => reviewMutation.mutate({ id: n.id, status: 'approved', loanId: n.loan_id, newReturnDate: n.new_return_date })}
+                            disabled={reviewMutation.isPending}
+                          >
+                            ✓ Aprobar
+                          </button>
+                          <button
+                            className="btn btn-danger btn-sm"
+                            onClick={() => reviewMutation.mutate({ id: n.id, status: 'rejected' })}
+                            disabled={reviewMutation.isPending}
+                          >
+                            ✕ Rechazar
+                          </button>
+                        </>
+                      ) : (
+                        <div style={{
+                          fontSize: '11px', color: 'var(--color-ink-4)',
+                          background: 'var(--color-paper-2)', borderRadius: 'var(--radius)',
+                          padding: '8px 10px', maxWidth: '160px', textAlign: 'center', lineHeight: '1.4',
+                        }}>
+                          🔒 Solo{' '}
+                          {n.borrower_role === 'admin'
+                            ? 'el admin principal'
+                            : 'un administrador'}{' '}
+                          puede revisar esta solicitud
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
