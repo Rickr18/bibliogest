@@ -10,7 +10,8 @@ export const loansService = {
         borrower:users!loans_user_id_fkey(id, full_name, document_id, phone),
         books(id, title, author, isbn, category_id, categories(name)),
         creator:users!loans_created_by_fkey(full_name, role),
-        returner:users!loans_returned_by_fkey(full_name, role)
+        returner:users!loans_returned_by_fkey(full_name, role),
+        loan_notifications(fine_amount, status, created_at)
       `, { count: 'exact' })
 
     if (status) query = query.eq('status', status)
@@ -80,13 +81,13 @@ export const loansService = {
     return data
   },
 
-  // Préstamos activos de un usuario específico (para portal lector)
+  // Préstamos activos/renovados/vencidos de un usuario (para portal lector)
   async getByUser(userId) {
     const { data, error } = await supabase
       .from('loans')
       .select('*, books(title, author, isbn)')
       .eq('user_id', userId)
-      .in('status', ['active', 'renewed'])
+      .in('status', ['active', 'renewed', 'overdue'])
       .order('due_date')
     if (error) throw error
     return data

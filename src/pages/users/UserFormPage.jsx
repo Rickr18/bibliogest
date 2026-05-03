@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { usersService } from '../../services/usersService.js'
 import { useAuthStore, useUIStore } from '../../store/index.js'
@@ -16,6 +16,8 @@ export function UserFormPage() {
   const { id } = useParams()
   const isEdit = Boolean(id)
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const actionSuspend = searchParams.get('action') === 'suspend'
   const qc = useQueryClient()
   const addToast = useUIStore(s => s.addToast)
   const currentUser = useAuthStore(s => s.user)
@@ -46,8 +48,8 @@ export function UserFormPage() {
       full_name: existing.full_name ?? '', email: existing.email ?? '',
       phone: existing.phone ?? '', document_id: existing.document_id ?? '',
       role: existing.role ?? 'reader', notes: existing.notes ?? '',
-      active: existing.active ?? true,
-      deactivation_reason: existing.deactivation_reason ?? null,
+      active: actionSuspend ? false : (existing.active ?? true),
+      deactivation_reason: actionSuspend ? 'fine_pending' : (existing.deactivation_reason ?? null),
     })
   }, [existing])
 

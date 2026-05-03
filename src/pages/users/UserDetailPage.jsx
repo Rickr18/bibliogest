@@ -6,7 +6,7 @@ import { useAuthStore, useUIStore } from '../../store/index.js'
 import { formatDate, getDaysLeft } from '../../utils/dates.js'
 import { LoanStatusBadge, Spinner, EmptyState, ReputationBadge } from '../../components/ui/Misc.jsx'
 import { Modal } from '../../components/ui/Modal.jsx'
-import { USER_ROLES, PRINCIPAL_ADMIN_ID } from '../../utils/constants.js'
+import { USER_ROLES, PRINCIPAL_ADMIN_ID, FINE_PER_DAY_COP } from '../../utils/constants.js'
 
 export function UserDetailPage() {
   const { id } = useParams()
@@ -82,6 +82,11 @@ export function UserDetailPage() {
     l.status === 'overdue' || (l.status === 'active' && getDaysLeft(l.due_date) < 0)
   )
 
+  const totalFine = overdue.reduce((sum, l) => {
+    const days = getDaysLeft(l.due_date)
+    return sum + (days < 0 ? Math.abs(days) * FINE_PER_DAY_COP : 0)
+  }, 0)
+
   const initials = user.full_name.split(' ').map(n => n[0]).slice(0, 2).join('')
 
   return (
@@ -117,7 +122,6 @@ export function UserDetailPage() {
         </div>
 
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          {/* Botón clave temporal — solo cuando el actor tiene permiso */}
           {canResetPassword && (
             <button
               className="btn btn-secondary"
@@ -133,7 +137,7 @@ export function UserDetailPage() {
       </div>
 
       {/* ── Stats ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '24px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: totalFine > 0 ? '12px' : '24px' }}>
         {[
           { label: 'Total préstamos', value: history.length, color: 'var(--color-blue)' },
           { label: 'Activos',         value: active.length,  color: 'var(--color-accent)' },
@@ -147,6 +151,30 @@ export function UserDetailPage() {
           </div>
         ))}
       </div>
+
+      {/* ── Alerta de multa ── */}
+      {totalFine > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: 'var(--color-red-soft)', border: '1px solid #fca5a5',
+          borderRadius: 'var(--radius)', padding: '12px 16px', marginBottom: '24px',
+          gap: '12px', flexWrap: 'wrap',
+        }}>
+          <div>
+            <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--color-red)', marginBottom: '2px' }}>
+              ⚠️ Multa acumulada: ${totalFine.toLocaleString('es-CO')} COP
+            </p>
+            <p style={{ fontSize: '12px', color: 'var(--color-red)', opacity: 0.8 }}>
+              {overdue.length} préstamo{overdue.length !== 1 ? 's' : ''} vencido{overdue.length !== 1 ? 's' : ''} · $500/día de retraso
+            </p>
+          </div>
+          {user.role === 'reader' && user.active && (
+            <Link to={`/users/${id}/edit?action=suspend`} className="btn btn-danger" style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>
+              Inhabilitar cuenta
+            </Link>
+          )}
+        </div>
+      )}
 
       {/* ── Datos de contacto ── */}
       <div className="card" style={{ padding: '20px', marginBottom: '24px' }}>
@@ -212,16 +240,57 @@ export function UserDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {history.map(loan => (
+              {history.map(loan => {
+                  // Fecha de referencia real (antes de renovaciones)
+                  const refDate = loan.original_due_date || loan.due_date
+                  const returnedLate = loan.status === 'returned' && loan.return_date && loan.return_date > refDate
+
+                  // Badge de estado enriquecido
+                  let badge
+                  if (loan.status === 'returned' && returnedLate) {
+                    badge = <span className="badge badge-red" style={{ fontSize: '11px' }}>Devuelto con retraso</span>
+                  } else if (loan.status === 'returned') {
+                    badge = <span className="badge badge-green" style={{ fontSize: '11px' }}>Devuelto a tiempo</span>
+                  } else {
+                    badge = <LoanStatusBadge status={loan.status} dueDate={loan.due_date} />
+                  }
+
+                  // Construir texto del tooltip
+                  const tooltipParts = []
+                  if (returnedLate) {
+                    const daysLate = Math.round((new Date(loan.return_date) - new Date(refDate + 'T12:00:00')) / 86400000)
+                    tooltipParts.push(`${daysLate} día${daysLate !== 1 ? 's' : ''} de retraso`)
+                  }
+                  if (loan.fine_amount > 0) {
+                    if (loan.fine_waived) {
+                      tooltipParts.push(`Multa condonada: $${Number(loan.fine_amount).toLocaleString('es-CO')} COP`)
+                      if (loan.fine_waived_reason) tooltipParts.push(`Motivo: ${loan.fine_waived_reason}`)
+                    } else {
+                      tooltipParts.push(`Multa cobrada: $${Number(loan.fine_amount).toLocaleString('es-CO')} COP`)
+                    }
+                  }
+                  const tooltipText = tooltipParts.join(' · ')
+
+                  return (
                   <tr key={loan.id}>
                     <td style={{ fontWeight: '500', color: 'var(--color-ink)' }}>{loan.book_title}</td>
                     <td style={{ fontSize: '12px', color: 'var(--color-ink-3)' }}>{loan.book_author}</td>
                     <td style={{ fontSize: '13px' }}>{formatDate(loan.loan_date)}</td>
-                    <td style={{ fontSize: '13px' }}>{formatDate(loan.due_date)}</td>
+                    <td style={{ fontSize: '13px' }}>{formatDate(refDate)}</td>
                     <td style={{ fontSize: '13px' }}>{loan.return_date ? formatDate(loan.return_date) : '—'}</td>
-                    <td><LoanStatusBadge status={loan.status} dueDate={loan.due_date} /></td>
+                    <td>
+                      <div title={tooltipText || undefined} style={{ cursor: tooltipText ? 'help' : 'default', display: 'inline-flex', flexDirection: 'column', gap: '3px' }}>
+                        {badge}
+                        {loan.fine_amount > 0 && (
+                          <span style={{ fontSize: '10px', color: loan.fine_waived ? 'var(--color-ink-3)' : 'var(--color-red)', fontStyle: 'italic' }}>
+                            {loan.fine_waived ? 'Multa condonada' : `Multa $${Number(loan.fine_amount).toLocaleString('es-CO')}`}
+                          </span>
+                        )}
+                      </div>
+                    </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>

@@ -49,8 +49,9 @@ export function ReaderPortalPage() {
 
   function handleNotify(e) {
     e.preventDefault()
-    const days = getDaysLeft(notifyModal.due_date)
-    const fine = days < 0 ? Math.abs(getDaysLeft(newDate || notifyModal.due_date)) * FINE_PER_DAY : 0
+    const daysLate = getDaysLeft(notifyModal.due_date)
+    // Multa = días vencidos desde due_date hasta HOY (no hasta la nueva fecha propuesta)
+    const fine = daysLate < 0 ? Math.abs(daysLate) * FINE_PER_DAY : 0
     notifyMutation.mutate({
       loan_id: notifyModal.id,
       user_id: currentProfile.id,
@@ -234,14 +235,14 @@ export function ReaderPortalPage() {
                 style={{ minHeight: '90px' }} />
             </div>
 
-            {newDate && getDaysLeft(notifyModal.due_date) < 0 && (
+            {getDaysLeft(notifyModal.due_date) < 0 && (
               <div style={{
                 background: 'var(--color-amber-soft)', borderRadius: 'var(--radius)',
                 padding: '12px', marginBottom: '16px', fontSize: '13px', color: 'var(--color-amber)',
               }}>
-                ⚠️ Se generará una multa estimada de <strong>
+                ⚠️ Multa acumulada hasta hoy: <strong>
                   ${(Math.abs(getDaysLeft(notifyModal.due_date)) * FINE_PER_DAY).toLocaleString('es-CO')} COP
-                </strong> por los días de retraso actuales. La biblioteca confirmará el monto exacto.
+                </strong> ({Math.abs(getDaysLeft(notifyModal.due_date))} días · $500/día). La biblioteca confirmará el monto exacto.
               </div>
             )}
 

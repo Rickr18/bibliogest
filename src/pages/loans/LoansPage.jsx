@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { loansService } from '../../services/loansService.js'
 import { usersService } from '../../services/usersService.js'
+import { finesService } from '../../services/finesService.js'
 import { categoriesService } from '../../services/categoriesService.js'
 import { useSearch } from '../../hooks/useSearch.js'
 import { SearchBar, FilterSelect } from '../../components/ui/SearchBar.jsx'
@@ -10,9 +11,9 @@ import { Pagination, Spinner, EmptyState, LoanStatusBadge } from '../../componen
 import { Modal } from '../../components/ui/Modal.jsx'
 import { formatDate, getDaysLeft } from '../../utils/dates.js'
 import { useAuthStore, useUIStore } from '../../store/index.js'
-import { USER_ROLES } from '../../utils/constants.js'
+import { USER_ROLES, FINE_PER_DAY_COP } from '../../utils/constants.js'
 
-const FINE_PER_DAY = 500 // COP
+const FINE_PER_DAY = FINE_PER_DAY_COP
 
 function StaffTag({ name, role }) {
   if (!name) return <span style={{ fontSize: '11px', color: 'var(--color-ink-4)' }}>—</span>
@@ -31,7 +32,9 @@ function StaffTag({ name, role }) {
 
 export function LoansPage() {
   const [urlParams] = useSearchParams()
-  const [returnModal, setReturnModal] = useState(null)
+  const [returnModal, setReturnModal] = useState(null)  // { loan, fine, daysOverdue }
+  const [finePaid, setFinePaid] = useState(false)
+  const [waivedReason, setWaivedReason] = useState('')
   const { search, setSearch, debouncedSearch, filters, updateFilter, page, setPage } = useSearch({
     status: urlParams.get('status') ?? '',
     overdue: '',
@@ -72,13 +75,33 @@ export function LoansPage() {
   })
 
   const returnMutation = useMutation({
-    mutationFn: loanId => loansService.returnBook(loanId, staffProfile?.id ?? null),
+    mutationFn: async ({ loanId, loan, fine, daysOverdue }) => {
+      await loansService.returnBook(loanId, staffProfile?.id ?? null)
+      // Siempre registrar si había multa — cobrada o condonada
+      if (fine > 0 && daysOverdue > 0) {
+        await finesService.record({
+          loanId,
+          userId: loan.borrower?.id ?? loan.user_id,
+          collectedBy: staffProfile?.id ?? null,
+          amount: fine,
+          daysOverdue,
+          waived: !finePaid,
+          waivedReason: !finePaid ? (waivedReason.trim() || 'Sin motivo especificado') : null,
+        })
+      }
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['loans'] })
       qc.invalidateQueries({ queryKey: ['books'] })
       qc.invalidateQueries({ queryKey: ['dashboard-stats'] })
-      addToast('Devolución registrada correctamente', 'success')
+      qc.invalidateQueries({ queryKey: ['fines-stats'] })
+      addToast(
+        finePaid ? 'Devolución registrada y multa cobrada' : 'Devolución registrada — multa condonada',
+        finePaid ? 'success' : 'warning'
+      )
       setReturnModal(null)
+      setFinePaid(false)
+      setWaivedReason('')
     },
     onError: err => addToast(err.message, 'error'),
   })
@@ -183,11 +206,11 @@ export function LoansPage() {
                       <td style={{ fontSize: '13px' }}>{formatDate(loan.due_date)}</td>
                       <td><LoanStatusBadge status={loan.status} dueDate={loan.due_date} /></td>
                       <td>
-                        {isActive && days < 0 && (
+                        {(isActive || loan.status === 'overdue') && days < 0 && (
                           <div>
                             <span className="badge badge-red" style={{ fontSize: '11px' }}>{Math.abs(days)}d vencido</span>
                             <p style={{ fontSize: '11px', color: 'var(--color-red)', marginTop: '2px', fontWeight: '600' }}>
-                              ${fine.toLocaleString('es-CO')}
+                              ${(Math.abs(days) * FINE_PER_DAY).toLocaleString('es-CO')}
                             </p>
                           </div>
                         )}
@@ -210,7 +233,17 @@ export function LoansPage() {
                       <td>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                           {isActive && (
-                            <button className="btn btn-secondary btn-sm" onClick={() => setReturnModal(loan)}>
+                            <button className="btn btn-secondary btn-sm" onClick={() => {
+                              const refDate = loan.original_due_date || loan.due_date
+                              const d = getDaysLeft(refDate)
+                              const approvedFine = (loan.loan_notifications ?? [])
+                                .filter(n => n.status === 'approved' && Number(n.fine_amount) > 0)
+                                .reduce((max, n) => Math.max(max, Number(n.fine_amount)), 0)
+                              const calcFine = d < 0 ? Math.abs(d) * FINE_PER_DAY : 0
+                              const fine = calcFine > 0 ? calcFine : approvedFine
+                              const daysOverdue = fine > 0 ? (calcFine > 0 ? Math.abs(d) : Math.round(fine / FINE_PER_DAY)) : 0
+                              setReturnModal({ loan, fine, daysOverdue })
+                            }}>
                               Registrar devolución
                             </button>
                           )}
@@ -224,6 +257,15 @@ export function LoansPage() {
                             >
                               Marcar vencido
                             </button>
+                          )}
+                          {loan.borrower?.id && (
+                            <Link
+                              to={`/users/${loan.borrower.id}`}
+                              className="btn btn-ghost btn-sm"
+                              style={{ fontSize: '11px' }}
+                            >
+                              Ver perfil
+                            </Link>
                           )}
                         </div>
                       </td>
@@ -240,32 +282,64 @@ export function LoansPage() {
       </div>
 
       {/* Modal devolución */}
-      <Modal open={Boolean(returnModal)} onClose={() => setReturnModal(null)} title="Registrar devolución">
+      <Modal open={Boolean(returnModal)} onClose={() => { setReturnModal(null); setFinePaid(false); setWaivedReason('') }} title="Registrar devolución">
         {returnModal && (() => {
-          const days = getDaysLeft(returnModal.due_date)
-          const fine = days < 0 ? Math.abs(days) * FINE_PER_DAY : 0
+          const { loan, fine, daysOverdue } = returnModal
           return (
             <div>
               <div style={{ background: 'var(--color-paper-2)', borderRadius: 'var(--radius)', padding: '16px', marginBottom: '16px' }}>
                 <p style={{ fontSize: '14px', fontWeight: '600', color: 'var(--color-ink)', marginBottom: '4px' }}>
-                  {returnModal.books?.title}
+                  {loan.books?.title}
                 </p>
                 <p style={{ fontSize: '13px', color: 'var(--color-ink-3)' }}>
-                  Prestado a: <strong>{returnModal.borrower?.full_name}</strong>
+                  Prestado a: <strong>{loan.borrower?.full_name}</strong>
                 </p>
                 <p style={{ fontSize: '13px', color: 'var(--color-ink-3)', marginTop: '4px' }}>
-                  Vencía: {formatDate(returnModal.due_date)}
+                  Vencía: {formatDate(loan.original_due_date || loan.due_date)}
                 </p>
-                {fine > 0 && (
-                  <div style={{ marginTop: '12px', background: 'var(--color-red-soft)', borderRadius: 'var(--radius)', padding: '10px 12px' }}>
-                    <p style={{ fontSize: '13px', color: 'var(--color-red)', fontWeight: '600' }}>
-                      ⚠️ {Math.abs(days)} días de retraso — Multa: ${fine.toLocaleString('es-CO')} COP
-                    </p>
-                  </div>
-                )}
               </div>
 
-              {/* Quién registra la devolución */}
+              {fine > 0 ? (
+                <div style={{ background: 'var(--color-red-soft)', border: '1px solid #fca5a5', borderRadius: 'var(--radius)', padding: '14px 16px', marginBottom: '16px' }}>
+                  <p style={{ fontSize: '13px', color: 'var(--color-red)', fontWeight: '600', marginBottom: '10px' }}>
+                    ⚠️ {daysOverdue} días de retraso — Multa: ${fine.toLocaleString('es-CO')} COP
+                  </p>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={finePaid}
+                      onChange={e => setFinePaid(e.target.checked)}
+                      style={{ width: '16px', height: '16px', accentColor: 'var(--color-red)', cursor: 'pointer' }}
+                    />
+                    <span style={{ fontSize: '13px', color: 'var(--color-red)', fontWeight: '600' }}>
+                      Multa cobrada en este momento (${fine.toLocaleString('es-CO')} COP)
+                    </span>
+                  </label>
+                  {!finePaid && (
+                    <div style={{ marginTop: '10px', marginLeft: '26px' }}>
+                      <p style={{ fontSize: '11px', color: 'var(--color-red)', opacity: 0.8, marginBottom: '6px' }}>
+                        La multa quedará registrada como <strong>condonada</strong> con tu nombre. Indica el motivo:
+                      </p>
+                      <input
+                        className="input"
+                        style={{ fontSize: '12px', padding: '6px 10px' }}
+                        placeholder="Ej: acuerdo con el usuario, error de fecha, etc."
+                        value={waivedReason}
+                        onChange={e => setWaivedReason(e.target.value)}
+                        maxLength={200}
+                      />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 'var(--radius)', padding: '10px 14px', marginBottom: '16px' }}>
+                  <p style={{ fontSize: '13px', color: '#16a34a', fontWeight: '500' }}>
+                    Sin multa — devolución a tiempo
+                  </p>
+                </div>
+              )}
+
+              {/* Quién registra */}
               {staffProfile && (
                 <div style={{
                   display: 'flex', alignItems: 'center', gap: '10px',
@@ -282,9 +356,7 @@ export function LoansPage() {
                     {staffProfile.full_name?.[0]?.toUpperCase()}
                   </div>
                   <div>
-                    <p style={{ fontSize: '12px', color: 'var(--color-ink-4)', marginBottom: '1px' }}>
-                      Registrando como
-                    </p>
+                    <p style={{ fontSize: '12px', color: 'var(--color-ink-4)', marginBottom: '1px' }}>Registrando como</p>
                     <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--color-ink)' }}>
                       {staffProfile.full_name}
                       <span style={{ fontWeight: '400', color: 'var(--color-ink-3)', marginLeft: '6px' }}>
@@ -295,13 +367,21 @@ export function LoansPage() {
                 </div>
               )}
 
-              <p style={{ fontSize: '14px', color: 'var(--color-ink-2)', marginBottom: '24px' }}>
-                ¿Confirmas la devolución? El inventario se actualizará automáticamente.
-              </p>
+              {/* Bloquear confirmar si hay multa, no se marcó cobrada y no hay motivo */}
+              {fine > 0 && !finePaid && !waivedReason.trim() && (
+                <p style={{ fontSize: '12px', color: 'var(--color-red)', marginBottom: '12px', textAlign: 'right' }}>
+                  Escribe el motivo de condonación para continuar.
+                </p>
+              )}
+
               <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                <button className="btn btn-ghost" onClick={() => setReturnModal(null)}>Cancelar</button>
-                <button className="btn btn-primary" onClick={() => returnMutation.mutate(returnModal.id)} disabled={returnMutation.isPending}>
-                  {returnMutation.isPending ? 'Registrando...' : 'Confirmar devolución'}
+                <button className="btn btn-ghost" onClick={() => { setReturnModal(null); setFinePaid(false); setWaivedReason('') }}>Cancelar</button>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => returnMutation.mutate({ loanId: loan.id, loan, fine, daysOverdue })}
+                  disabled={returnMutation.isPending || (fine > 0 && !finePaid && !waivedReason.trim())}
+                >
+                  {returnMutation.isPending ? 'Registrando...' : finePaid ? 'Confirmar devolución y cobro' : 'Confirmar — multa condonada'}
                 </button>
               </div>
             </div>

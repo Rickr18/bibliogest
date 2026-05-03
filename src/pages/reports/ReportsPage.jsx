@@ -1,11 +1,18 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell,
   AreaChart, Area,
 } from 'recharts'
+import { Link } from 'react-router-dom'
 import { reportsService } from '../../services/reportsService.js'
+import { finesService } from '../../services/finesService.js'
 import { Spinner } from '../../components/ui/Misc.jsx'
+import {
+  downloadCsv, downloadExcel, downloadPdf,
+  loansToRows, finesToRows, topBooksToRows, topCategoriesToRows,
+} from '../../utils/exportUtils.js'
 
 const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 const YEAR = new Date().getFullYear()
@@ -48,6 +55,59 @@ function ChartError({ message }) {
   )
 }
 
+// ── Botón de exportación con menú desplegable ─────────────────────────────────
+function ExportMenu({ onCsv, onExcel, onPdf, loading }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        className="btn btn-secondary btn-sm"
+        style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+        onClick={() => setOpen(o => !o)}
+        disabled={loading}
+      >
+        {loading ? '⏳ Exportando…' : '⬇ Exportar'}
+        <span style={{ fontSize: '10px' }}>▾</span>
+      </button>
+      {open && !loading && (
+        <>
+          {/* overlay para cerrar al hacer click fuera */}
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 9 }}
+            onClick={() => setOpen(false)}
+          />
+          <div style={{
+            position: 'absolute', right: 0, top: '100%', marginTop: '4px',
+            background: 'white', border: '1px solid var(--color-paper-3)',
+            borderRadius: 'var(--radius)', boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+            zIndex: 10, minWidth: '140px', overflow: 'hidden',
+          }}>
+            {[
+              { label: '📄 CSV', action: onCsv },
+              { label: '📊 Excel (.xlsx)', action: onExcel },
+              { label: '🖨 PDF', action: onPdf },
+            ].map(({ label, action }) => (
+              <button
+                key={label}
+                onClick={() => { action(); setOpen(false) }}
+                style={{
+                  display: 'block', width: '100%', textAlign: 'left',
+                  padding: '9px 14px', fontSize: '13px', border: 'none',
+                  background: 'none', cursor: 'pointer', color: 'var(--color-ink)',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--color-paper-2)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'none'}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 const KPI_DEFS = [
   { key: 'total_books',     label: 'Total libros',       color: '#2563eb', icon: '📚', bg: '#eff6ff' },
   { key: 'available_books', label: 'Disponibles',        color: '#16a34a', icon: '✅', bg: '#f0fdf4' },
@@ -58,6 +118,8 @@ const KPI_DEFS = [
 ]
 
 export function ReportsPage() {
+  const [exporting, setExporting] = useState(false)
+
   const { data: stats, isLoading: loadingStats } = useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: reportsService.getDashboardStats,
@@ -70,12 +132,17 @@ export function ReportsPage() {
 
   const { data: topBooks = [], isLoading: loadingTop, isError: errorTop } = useQuery({
     queryKey: ['most-loaned'],
-    queryFn: reportsService.getMostLoanedBooks,
+    queryFn: () => reportsService.getMostLoanedBooks(),
   })
 
   const { data: topCategories = [], isLoading: loadingCats, isError: errorCats } = useQuery({
     queryKey: ['most-loaned-categories'],
-    queryFn: reportsService.getMostLoanedCategories,
+    queryFn: () => reportsService.getMostLoanedCategories(),
+  })
+
+  const { data: finesStats } = useQuery({
+    queryKey: ['fines-stats'],
+    queryFn: () => finesService.getStats(),
   })
 
   const monthlyData = (monthlyRaw ?? []).map((count, i) => ({
@@ -84,6 +151,95 @@ export function ReportsPage() {
   }))
 
   const totalLoansYear = (monthlyRaw ?? []).reduce((s, c) => s + c, 0)
+
+  // ── Funciones de exportación ──────────────────────────────────────────────
+
+  async function fetchExportData() {
+    const [loans, fines] = await Promise.all([
+      reportsService.getAllLoansForExport(YEAR),
+      finesService.getAllForExport(),
+    ])
+    return { loans, fines }
+  }
+
+  async function handleExportCsv(target) {
+    setExporting(true)
+    try {
+      if (target === 'rankings') {
+        const bookRows = topBooksToRows(topBooks)
+        const catRows  = topCategoriesToRows(topCategories)
+        downloadCsv(bookRows, `libros_mas_prestados_${YEAR}.csv`)
+        if (catRows.length) downloadCsv(catRows, `categorias_mas_prestadas_${YEAR}.csv`)
+      } else if (target === 'loans') {
+        const loans = await reportsService.getAllLoansForExport(YEAR)
+        downloadCsv(loansToRows(loans), `prestamos_${YEAR}.csv`)
+      } else if (target === 'fines') {
+        const fines = await finesService.getAllForExport()
+        downloadCsv(finesToRows(fines), `multas_${YEAR}.csv`)
+      } else {
+        // Todo en archivos separados
+        const { loans, fines } = await fetchExportData()
+        downloadCsv(loansToRows(loans),       `prestamos_${YEAR}.csv`)
+        downloadCsv(finesToRows(fines),        `multas_${YEAR}.csv`)
+        downloadCsv(topBooksToRows(topBooks),  `libros_mas_prestados_${YEAR}.csv`)
+        downloadCsv(topCategoriesToRows(topCategories), `categorias_mas_prestadas_${YEAR}.csv`)
+      }
+    } finally { setExporting(false) }
+  }
+
+  async function handleExportExcel(target) {
+    setExporting(true)
+    try {
+      if (target === 'rankings') {
+        downloadExcel([
+          { name: 'Libros más prestados', rows: topBooksToRows(topBooks) },
+          { name: 'Categorías',            rows: topCategoriesToRows(topCategories) },
+        ], `rankings_${YEAR}.xlsx`)
+      } else if (target === 'loans') {
+        const loans = await reportsService.getAllLoansForExport(YEAR)
+        downloadExcel([{ name: 'Préstamos', rows: loansToRows(loans) }], `prestamos_${YEAR}.xlsx`)
+      } else if (target === 'fines') {
+        const fines = await finesService.getAllForExport()
+        downloadExcel([{ name: 'Multas', rows: finesToRows(fines) }], `multas_${YEAR}.xlsx`)
+      } else {
+        const { loans, fines } = await fetchExportData()
+        downloadExcel([
+          { name: 'Préstamos',            rows: loansToRows(loans) },
+          { name: 'Multas',               rows: finesToRows(fines) },
+          { name: 'Libros más prestados', rows: topBooksToRows(topBooks) },
+          { name: 'Categorías',           rows: topCategoriesToRows(topCategories) },
+        ], `reporte_completo_${YEAR}.xlsx`)
+      }
+    } finally { setExporting(false) }
+  }
+
+  async function handleExportPdf(target) {
+    setExporting(true)
+    try {
+      if (target === 'rankings') {
+        downloadPdf([
+          { title: 'Libros más prestados', rows: topBooksToRows(topBooks) },
+          { title: 'Categorías más prestadas', rows: topCategoriesToRows(topCategories) },
+        ], `rankings_${YEAR}.pdf`, `Rankings de préstamos · ${YEAR}`)
+      } else if (target === 'loans') {
+        const loans = await reportsService.getAllLoansForExport(YEAR)
+        downloadPdf([{ title: `Todos los préstamos ${YEAR}`, rows: loansToRows(loans) }],
+          `prestamos_${YEAR}.pdf`, `Préstamos ${YEAR}`)
+      } else if (target === 'fines') {
+        const fines = await finesService.getAllForExport()
+        downloadPdf([{ title: 'Libro contable de multas', rows: finesToRows(fines) }],
+          `multas_${YEAR}.pdf`, `Multas · BiblioGest`)
+      } else {
+        const { loans, fines } = await fetchExportData()
+        downloadPdf([
+          { title: `Todos los préstamos ${YEAR}`, rows: loansToRows(loans) },
+          { title: 'Libro contable de multas',    rows: finesToRows(fines) },
+          { title: 'Libros más prestados',        rows: topBooksToRows(topBooks) },
+          { title: 'Categorías más prestadas',    rows: topCategoriesToRows(topCategories) },
+        ], `reporte_completo_${YEAR}.pdf`, `Reporte BiblioGest · ${YEAR}`)
+      }
+    } finally { setExporting(false) }
+  }
 
   const disponibilidadData = stats
     ? [
@@ -104,6 +260,12 @@ export function ReportsPage() {
           <h1 className="page-title">Reportes</h1>
           <p className="page-subtitle">Estadísticas y movimientos del sistema · {YEAR}</p>
         </div>
+        <ExportMenu
+          loading={exporting}
+          onCsv={() => handleExportCsv('all')}
+          onExcel={() => handleExportExcel('all')}
+          onPdf={() => handleExportPdf('all')}
+        />
       </div>
 
       {/* ── KPIs ─────────────────────────────────────────────────────────── */}
@@ -245,11 +407,19 @@ export function ReportsPage() {
                 Ranking acumulado de todos los tiempos
               </p>
             </div>
-            {topBooks.length > 0 && (
-              <span style={{ fontSize: '11px', color: 'var(--color-ink-4)' }}>
-                Top {topBooks.length}
-              </span>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              {topBooks.length > 0 && (
+                <span style={{ fontSize: '11px', color: 'var(--color-ink-4)' }}>Top {topBooks.length}</span>
+              )}
+              {topBooks.length > 0 && (
+                <ExportMenu
+                  loading={exporting}
+                  onCsv={() => handleExportCsv('rankings')}
+                  onExcel={() => handleExportExcel('rankings')}
+                  onPdf={() => handleExportPdf('rankings')}
+                />
+              )}
+            </div>
           </div>
 
           {loadingTop ? (
@@ -357,6 +527,79 @@ export function ReportsPage() {
         </div>
 
       </div>
+
+      {/* ── Préstamos del año (exportable) ── */}
+      <div className="card" style={{ padding: '24px', marginTop: '24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px', flexWrap: 'wrap', gap: '12px' }}>
+          <SectionTitle subtitle={`Todos los préstamos registrados en ${YEAR} — exporta para análisis externo`}>
+            Préstamos del año
+          </SectionTitle>
+          <ExportMenu
+            loading={exporting}
+            onCsv={() => handleExportCsv('loans')}
+            onExcel={() => handleExportExcel('loans')}
+            onPdf={() => handleExportPdf('loans')}
+          />
+        </div>
+        <p style={{ fontSize: '13px', color: 'var(--color-ink-3)', lineHeight: '1.6' }}>
+          Descarga el listado completo de préstamos de {YEAR} con usuario, libro, categoría, fechas y estado.
+          El Excel incluye todas las columnas para análisis en hoja de cálculo.
+        </p>
+        <div style={{ display: 'flex', gap: '10px', marginTop: '14px', flexWrap: 'wrap' }}>
+          {[
+            { label: `Préstamos ${YEAR}`, value: totalLoansYear, color: 'var(--color-accent)' },
+            { label: 'Total libros en sistema', value: stats?.total_books ?? '—', color: 'var(--color-blue)' },
+            { label: 'Activos ahora', value: stats?.active_loans ?? '—', color: 'var(--color-ink-3)' },
+          ].map(({ label, value, color }) => (
+            <div key={label} style={{
+              background: 'var(--color-paper-2)', borderRadius: 'var(--radius)',
+              padding: '10px 16px', borderLeft: `3px solid ${color}`,
+            }}>
+              <p style={{ fontSize: '10px', color: 'var(--color-ink-4)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '2px' }}>{label}</p>
+              <p style={{ fontSize: '20px', fontWeight: '700', color }}>{value}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Multas ── */}
+      <div className="card" style={{ padding: '24px', marginTop: '24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+          <SectionTitle subtitle="Pagos por retraso en devoluciones registrados en el sistema">
+            Multas cobradas
+          </SectionTitle>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <ExportMenu
+              loading={exporting}
+              onCsv={() => handleExportCsv('fines')}
+              onExcel={() => handleExportExcel('fines')}
+              onPdf={() => handleExportPdf('fines')}
+            />
+            <Link to="/fines" className="btn btn-secondary btn-sm" style={{ fontSize: '12px' }}>
+              Ver libro contable →
+            </Link>
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px' }}>
+          {[
+            { label: 'Total recaudado', value: `$${Number(finesStats?.total_collected ?? 0).toLocaleString('es-CO')}`, color: 'var(--color-red)' },
+            { label: 'Este mes',        value: `$${Number(finesStats?.this_month ?? 0).toLocaleString('es-CO')}`,        color: 'var(--color-accent)' },
+            { label: 'Total cobros',    value: finesStats?.count ?? 0,                                                    color: 'var(--color-blue)' },
+            { label: 'Cobros este mes', value: finesStats?.count_this_month ?? 0,                                         color: 'var(--color-amber)' },
+          ].map(({ label, value, color }) => (
+            <div key={label} className="stat-card" style={{ borderLeft: `3px solid ${color}`, padding: '14px 16px' }}>
+              <p className="stat-label" style={{ fontSize: '10px' }}>{label}</p>
+              <p className="stat-value" style={{ fontSize: '20px', color }}>{value}</p>
+            </div>
+          ))}
+        </div>
+        {(finesStats?.count ?? 0) === 0 && (
+          <p style={{ fontSize: '13px', color: 'var(--color-ink-4)', marginTop: '16px', textAlign: 'center' }}>
+            Aún no se han registrado multas. Se registran al confirmar una devolución con retraso.
+          </p>
+        )}
+      </div>
+
     </div>
   )
 }

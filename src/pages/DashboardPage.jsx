@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { reportsService } from '../services/reportsService.js'
 import { loansService } from '../services/loansService.js'
+import { finesService } from '../services/finesService.js'
 import { formatDate, getDaysLeft } from '../utils/dates.js'
 import { LoanStatusBadge, Spinner } from '../components/ui/Misc.jsx'
 
@@ -38,6 +39,11 @@ export function DashboardPage() {
   const { data: activeData, isLoading: loadingActive } = useQuery({
     queryKey: ['active-loans-dash'],
     queryFn: loansService.getActiveLoans,
+  })
+
+  const { data: finesStats } = useQuery({
+    queryKey: ['fines-stats'],
+    queryFn: () => finesService.getStats(),
   })
 
   const activeLoans = activeData ?? []
@@ -85,6 +91,15 @@ export function DashboardPage() {
             accent="var(--color-amber)"
             icon="📅"
           />
+          <Link to="/fines" style={{ textDecoration: 'none' }}>
+            <StatCard
+              label="Multas cobradas"
+              value={finesStats?.total_collected > 0 ? `$${Number(finesStats.total_collected).toLocaleString('es-CO')}` : '$0'}
+              sub={`${finesStats?.count ?? 0} cobros · este mes: $${Number(finesStats?.this_month ?? 0).toLocaleString('es-CO')}`}
+              accent="var(--color-red)"
+              icon="💰"
+            />
+          </Link>
         </div>
       )}
 

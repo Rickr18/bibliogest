@@ -130,11 +130,12 @@ export function NewLoanPage() {
     if (!selectedUser)          return addToast('Selecciona un usuario', 'warning')
     if (selectedBooks.length === 0) return addToast('Agrega al menos un libro', 'warning')
     mutation.mutate(selectedBooks.map(book => ({
-      user_id:    selectedUser.id,
-      book_id:    book.id,
-      due_date:   dueDate,
-      notes:      notes || null,
-      created_by: staffProfile?.id ?? null,
+      user_id:           selectedUser.id,
+      book_id:           book.id,
+      due_date:          dueDate,
+      original_due_date: dueDate,
+      notes:             notes || null,
+      created_by:        staffProfile?.id ?? null,
     })))
   }
 

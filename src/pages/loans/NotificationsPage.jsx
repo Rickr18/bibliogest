@@ -2,8 +2,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { notificationsService } from '../../services/usersService.js'
 import { loansService } from '../../services/loansService.js'
 import { useAuthStore, useUIStore } from '../../store/index.js'
-import { formatDate } from '../../utils/dates.js'
-import { USER_ROLES, PRINCIPAL_ADMIN_ID } from '../../utils/constants.js'
+import { formatDate, getDaysLeft } from '../../utils/dates.js'
+import { USER_ROLES, PRINCIPAL_ADMIN_ID, FINE_PER_DAY_COP } from '../../utils/constants.js'
 import { Spinner, EmptyState } from '../../components/ui/Misc.jsx'
 
 export function NotificationsPage() {
@@ -121,11 +121,23 @@ export function NotificationsPage() {
                           💬 "{n.message}"
                         </p>
                       )}
-                      {n.fine_amount > 0 && (
-                        <p style={{ fontSize: '12px', color: 'var(--color-red)', fontWeight: '600', marginTop: '6px' }}>
-                          Multa estimada: ${Number(n.fine_amount).toLocaleString('es-CO')} COP
-                        </p>
-                      )}
+                      {(() => {
+                        const daysNow = getDaysLeft(n.due_date)
+                        const fineNow = daysNow < 0 ? Math.abs(daysNow) * FINE_PER_DAY_COP : 0
+                        const fineAtSend = Number(n.fine_amount) || 0
+                        return fineNow > 0 ? (
+                          <div style={{ marginTop: '6px', background: 'var(--color-red-soft)', borderRadius: 'var(--radius)', padding: '8px 12px' }}>
+                            <p style={{ fontSize: '12px', color: 'var(--color-red)', fontWeight: '600' }}>
+                              Multa acumulada hoy: ${fineNow.toLocaleString('es-CO')} COP ({Math.abs(daysNow)}d vencido)
+                            </p>
+                            {fineAtSend > 0 && fineAtSend !== fineNow && (
+                              <p style={{ fontSize: '11px', color: 'var(--color-red)', opacity: 0.75, marginTop: '2px' }}>
+                                Al notificar era: ${fineAtSend.toLocaleString('es-CO')} COP
+                              </p>
+                            )}
+                          </div>
+                        ) : null
+                      })()}
                       <p style={{ fontSize: '11px', color: 'var(--color-ink-4)', marginTop: '8px' }}>
                         Enviado el {formatDate(n.created_at)}
                       </p>
@@ -202,8 +214,19 @@ export function NotificationsPage() {
                         <td style={{ fontSize: '13px' }}>
                           {n.new_return_date ? formatDate(n.new_return_date) : '—'}
                         </td>
-                        <td style={{ fontSize: '13px', color: n.fine_amount > 0 ? 'var(--color-red)' : 'var(--color-ink-3)' }}>
-                          {n.fine_amount > 0 ? `$${Number(n.fine_amount).toLocaleString('es-CO')}` : '—'}
+                        <td style={{ fontSize: '13px' }}>
+                          {(() => {
+                            // Usar fine_amount guardado si existe; si no, recalcular desde due_date hasta created_at
+                            const saved = Number(n.fine_amount) || 0
+                            if (saved > 0) return <span style={{ color: 'var(--color-red)' }}>${saved.toLocaleString('es-CO')}</span>
+                            const sentDate = new Date(n.created_at)
+                            const dueDate  = new Date(n.due_date + 'T12:00:00')
+                            const diffDays = Math.floor((sentDate - dueDate) / 86400000)
+                            const calc = diffDays > 0 ? diffDays * FINE_PER_DAY_COP : 0
+                            return calc > 0
+                              ? <span style={{ color: 'var(--color-red)' }}>${calc.toLocaleString('es-CO')}</span>
+                              : <span style={{ color: 'var(--color-ink-3)' }}>—</span>
+                          })()}
                         </td>
                         <td>
                           <ReviewerBadge name={n.reviewer_name} role={n.reviewer_role} />

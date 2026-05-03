@@ -14,6 +14,7 @@ const NAV_ADMIN = [
   { to: '/notifications', icon: '📬', label: 'Notificaciones' },
   { to: '/users',         icon: '👤', label: 'Usuarios' },
   { to: '/reports',       icon: '📊', label: 'Reportes' },
+  { to: '/fines',         icon: '💰', label: 'Multas' },
 ]
 
 const NAV_READER = [

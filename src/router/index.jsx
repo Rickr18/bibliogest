@@ -14,6 +14,7 @@ import { UsersPage } from '../pages/users/UsersPage.jsx'
 import { UserDetailPage } from '../pages/users/UserDetailPage.jsx'
 import { UserFormPage } from '../pages/users/UserFormPage.jsx'
 import { ReportsPage } from '../pages/reports/ReportsPage.jsx'
+import { FinesPage } from '../pages/fines/FinesPage.jsx'
 import { CategoriesPage } from '../pages/categories/CategoriesPage.jsx'
 import { ReaderPortalPage } from '../pages/reader/ReaderPortalPage.jsx'
 
@@ -38,6 +39,7 @@ export const router = createBrowserRouter([
       { path: 'users/:id/edit', element: <UserFormPage /> },
       { path: 'categories', element: <CategoriesPage /> },
       { path: 'reports', element: <ReportsPage /> },
+      { path: 'fines', element: <FinesPage /> },
       { path: 'my-loans', element: <ReaderPortalPage /> },
       { path: 'change-password', element: <ChangePasswordPage /> },
     ],
